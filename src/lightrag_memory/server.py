@@ -1,10 +1,15 @@
-"""LightRAG Memory MCP Server — complete tool set (verified against source code)."""
+"""LightRAG Memory MCP Server — 29 tools, verified against LightRAG source code."""
 
 import json
 from mcp.server.fastmcp import FastMCP
-from .client import get_client
+from .client import request, stream_request, LightRAGError
 
 mcp = FastMCP("LightRAG Memory")
+
+
+def _err(e: Exception) -> str:
+    """Format any exception as a readable error string."""
+    return f"❌ {type(e).__name__}: {e}"
 
 
 # ─── QUERY ────────────────────────────────────────────────────────────────────
@@ -28,16 +33,13 @@ async def query_memory(
     payload: dict = {"query": query, "mode": mode, "top_k": top_k}
     if response_type:
         payload["response_type"] = response_type
-
-    async with get_client(timeout=90) as c:
-        r = await c.post("/query", json=payload)
-        if r.status_code == 401:
-            return "Error 401: invalid API key (check LIGHTRAG_API_KEY)"
-        try:
-            data = r.json()
-            return data.get("response", str(data))
-        except Exception:
-            return r.text
+    try:
+        data = await request("POST", "/query", json=payload, timeout=90)
+        if isinstance(data, dict):
+            return data.get("response", json.dumps(data, ensure_ascii=False))
+        return str(data)
+    except LightRAGError as e:
+        return _err(e)
 
 
 @mcp.tool()
@@ -49,14 +51,15 @@ async def query_memory_with_citations(query: str, mode: str = "hybrid") -> str:
         query: Your question or search query
         mode: naive | local | global | hybrid (default) | mix
     """
-    async with get_client(timeout=90) as c:
-        r = await c.post(
-            "/query",
+    try:
+        data = await request(
+            "POST", "/query",
             json={"query": query, "mode": mode, "include_references": True},
+            timeout=90,
         )
-        if r.status_code == 401:
-            return "Error 401: invalid API key"
-        return r.text
+        return json.dumps(data, ensure_ascii=False) if isinstance(data, dict) else str(data)
+    except LightRAGError as e:
+        return _err(e)
 
 
 @mcp.tool()
@@ -69,14 +72,15 @@ async def query_context_only(query: str, mode: str = "hybrid") -> str:
         query: Topic or question
         mode: naive | local | global | hybrid (default) | mix
     """
-    async with get_client(timeout=60) as c:
-        r = await c.post(
-            "/query",
+    try:
+        data = await request(
+            "POST", "/query",
             json={"query": query, "mode": mode, "only_need_context": True},
+            timeout=60,
         )
-        if r.status_code == 401:
-            return "Error 401: invalid API key"
-        return r.text
+        return json.dumps(data, ensure_ascii=False) if isinstance(data, dict) else str(data)
+    except LightRAGError as e:
+        return _err(e)
 
 
 @mcp.tool()
@@ -95,14 +99,15 @@ async def query_raw_data(
         mode: naive | local | global | hybrid (default) | mix
         top_k: Number of results (default 10)
     """
-    async with get_client(timeout=60) as c:
-        r = await c.post(
-            "/query/data",
+    try:
+        data = await request(
+            "POST", "/query/data",
             json={"query": query, "mode": mode, "top_k": top_k},
+            timeout=60,
         )
-        if r.status_code == 401:
-            return "Error 401: invalid API key"
-        return r.text
+        return json.dumps(data, ensure_ascii=False) if isinstance(data, dict) else str(data)
+    except LightRAGError as e:
+        return _err(e)
 
 
 @mcp.tool()
@@ -119,17 +124,17 @@ async def query_with_conversation(
         history: Previous messages as list of {"role": "user"|"assistant", "content": "..."}
         mode: naive | local | global | hybrid (default) | mix
     """
-    async with get_client(timeout=90) as c:
-        r = await c.post(
-            "/query",
+    try:
+        data = await request(
+            "POST", "/query",
             json={"query": query, "mode": mode, "conversation_history": history},
+            timeout=90,
         )
-        if r.status_code == 401:
-            return "Error 401: invalid API key"
-        try:
-            return r.json().get("response", r.text)
-        except Exception:
-            return r.text
+        if isinstance(data, dict):
+            return data.get("response", json.dumps(data, ensure_ascii=False))
+        return str(data)
+    except LightRAGError as e:
+        return _err(e)
 
 
 # ─── DOCUMENTS: INSERT ────────────────────────────────────────────────────────
@@ -147,15 +152,12 @@ async def save_to_memory(text: str, file_source: str = "") -> str:
     payload: dict = {"text": text}
     if file_source:
         payload["file_source"] = file_source
-
-    async with get_client(timeout=120) as c:
-        r = await c.post("/documents/text", json=payload)
-        if r.status_code == 200:
-            label = f" as '{file_source}'" if file_source else ""
-            return f"✅ Saved to memory{label}"
-        if r.status_code == 401:
-            return "Error 401: invalid API key"
-        return f"Error {r.status_code}: {r.text}"
+    try:
+        await request("POST", "/documents/text", json=payload, timeout=120)
+        label = f" as '{file_source}'" if file_source else ""
+        return f"✅ Saved to memory{label}"
+    except LightRAGError as e:
+        return _err(e)
 
 
 @mcp.tool()
@@ -175,12 +177,11 @@ async def save_multiple_to_memory(
     payload: dict = {"texts": texts}
     if file_sources:
         payload["file_sources"] = file_sources
-
-    async with get_client(timeout=300) as c:
-        r = await c.post("/documents/texts", json=payload)
-        if r.status_code == 401:
-            return "Error 401: invalid API key"
-        return r.text
+    try:
+        data = await request("POST", "/documents/texts", json=payload, timeout=300)
+        return json.dumps(data, ensure_ascii=False) if isinstance(data, dict) else str(data)
+    except LightRAGError as e:
+        return _err(e)
 
 
 @mcp.tool()
@@ -193,17 +194,16 @@ async def upload_file_to_memory(file_path: str) -> str:
     """
     import os
     if not os.path.exists(file_path):
-        return f"Error: file not found at {file_path}"
-
-    async with get_client(timeout=300) as c:
+        return f"❌ File not found: {file_path}"
+    try:
         with open(file_path, "rb") as f:
-            files = {"file": (os.path.basename(file_path), f)}
-            r = await c.post("/documents/upload", files=files)
-        if r.status_code == 200:
-            return f"✅ File uploaded: {os.path.basename(file_path)}"
-        if r.status_code == 401:
-            return "Error 401: invalid API key"
-        return f"Error {r.status_code}: {r.text}"
+            files = {"file": (os.path.basename(file_path), f, "application/octet-stream")}
+            data = await request("POST", "/documents/upload", files=files, timeout=300)
+        return f"✅ File uploaded: {os.path.basename(file_path)}" + (
+            f" (track_id: {data.get('track_id')})" if isinstance(data, dict) and data.get("track_id") else ""
+        )
+    except LightRAGError as e:
+        return _err(e)
 
 
 @mcp.tool()
@@ -212,32 +212,48 @@ async def scan_input_folder() -> str:
     Trigger scanning of the /inputs folder on the LightRAG server.
     Use to index files manually placed in the server's input directory.
     """
-    async with get_client(timeout=30) as c:
-        r = await c.post("/documents/scan")
-        if r.status_code == 401:
-            return "Error 401: invalid API key"
-        return r.text
+    try:
+        data = await request("POST", "/documents/scan", timeout=30)
+        return json.dumps(data, ensure_ascii=False) if isinstance(data, dict) else str(data)
+    except LightRAGError as e:
+        return _err(e)
 
 
 # ─── DOCUMENTS: VIEW & DELETE ────────────────────────────────────────────────
 
 @mcp.tool()
-async def list_memory_documents(page: int = 1, page_size: int = 20) -> str:
+async def list_memory_documents(
+    page: int = 1,
+    page_size: int = 20,
+    status_filter: str = "",
+    sort_field: str = "updated_at",
+    sort_direction: str = "desc",
+) -> str:
     """
     List documents in memory with their processing status (paginated).
 
     Args:
         page: Page number (default: 1)
-        page_size: Results per page, max 100 (default: 20)
+        page_size: Results per page, min 10, max 200 (default: 20)
+        status_filter: Filter by status: PENDING, PROCESSING, PROCESSED, FAILED (empty = all)
+        sort_field: Sort by: created_at, updated_at (default), id, file_path
+        sort_direction: asc or desc (default)
     """
-    async with get_client(timeout=30) as c:
-        r = await c.post(
-            "/documents/paginated",
-            json={"page": page, "page_size": min(page_size, 100)},
-        )
-        if r.status_code == 401:
-            return "Error 401: invalid API key"
-        return r.text
+    # API enforces min=10, max=200
+    page_size = max(10, min(page_size, 200))
+    payload: dict = {
+        "page": page,
+        "page_size": page_size,
+        "sort_field": sort_field,
+        "sort_direction": sort_direction,
+    }
+    if status_filter:
+        payload["status_filter"] = status_filter.upper()
+    try:
+        data = await request("POST", "/documents/paginated", json=payload, timeout=30)
+        return json.dumps(data, ensure_ascii=False) if isinstance(data, dict) else str(data)
+    except LightRAGError as e:
+        return _err(e)
 
 
 @mcp.tool()
@@ -245,33 +261,41 @@ async def get_document_status_counts() -> str:
     """
     Get a quick summary: how many documents are completed / failed / pending / processing.
     """
-    async with get_client(timeout=15) as c:
-        r = await c.get("/documents/status_counts")
-        if r.status_code == 401:
-            return "Error 401: invalid API key"
-        return r.text
+    try:
+        data = await request("GET", "/documents/status_counts", timeout=15)
+        return json.dumps(data, ensure_ascii=False) if isinstance(data, dict) else str(data)
+    except LightRAGError as e:
+        return _err(e)
 
 
 @mcp.tool()
-async def delete_memory_document(document_id: str) -> str:
+async def delete_memory_document(
+    document_id: str,
+    delete_file: bool = False,
+    delete_llm_cache: bool = False,
+) -> str:
     """
     Delete a specific document from memory by its ID.
     Get document IDs from list_memory_documents().
 
     Args:
         document_id: Document ID (e.g. doc-abc123...)
+        delete_file: Also delete the source file from the upload directory
+        delete_llm_cache: Also delete cached LLM extraction results for this document
     """
-    async with get_client(timeout=30) as c:
-        r = await c.request(
-            "DELETE",
-            "/documents/delete_document",
-            json={"doc_ids": [document_id]},
+    try:
+        await request(
+            "DELETE", "/documents/delete_document",
+            json={
+                "doc_ids": [document_id],
+                "delete_file": delete_file,
+                "delete_llm_cache": delete_llm_cache,
+            },
+            timeout=30,
         )
-        if r.status_code in (200, 204):
-            return f"✅ Document {document_id} deleted"
-        if r.status_code == 401:
-            return "Error 401: invalid API key"
-        return f"Error {r.status_code}: {r.text}"
+        return f"✅ Document {document_id} deleted"
+    except LightRAGError as e:
+        return _err(e)
 
 
 # ─── PIPELINE CONTROL ────────────────────────────────────────────────────────
@@ -281,11 +305,11 @@ async def get_pipeline_status() -> str:
     """
     Check the current document processing pipeline status.
     """
-    async with get_client(timeout=15) as c:
-        r = await c.get("/documents/pipeline_status")
-        if r.status_code == 401:
-            return "Error 401: invalid API key"
-        return r.text
+    try:
+        data = await request("GET", "/documents/pipeline_status", timeout=15)
+        return json.dumps(data, ensure_ascii=False) if isinstance(data, dict) else str(data)
+    except LightRAGError as e:
+        return _err(e)
 
 
 @mcp.tool()
@@ -294,13 +318,11 @@ async def reprocess_failed_documents() -> str:
     Retry all documents that previously failed processing (e.g. due to 503/429 errors).
     Use this after Gemini API temporary outages or rate limit issues.
     """
-    async with get_client(timeout=30) as c:
-        r = await c.post("/documents/reprocess_failed")
-        if r.status_code == 401:
-            return "Error 401: invalid API key"
-        if r.status_code == 200:
-            return f"✅ Reprocessing started: {r.text}"
-        return f"Status {r.status_code}: {r.text}"
+    try:
+        data = await request("POST", "/documents/reprocess_failed", timeout=30)
+        return f"✅ Reprocessing started: {json.dumps(data, ensure_ascii=False)}"
+    except LightRAGError as e:
+        return _err(e)
 
 
 @mcp.tool()
@@ -309,13 +331,11 @@ async def cancel_pipeline() -> str:
     Cancel the currently running document processing pipeline.
     Use this if processing is stuck or you need to stop a long-running batch.
     """
-    async with get_client(timeout=15) as c:
-        r = await c.post("/documents/cancel_pipeline")
-        if r.status_code == 401:
-            return "Error 401: invalid API key"
-        if r.status_code == 200:
-            return "✅ Pipeline cancelled"
-        return f"Status {r.status_code}: {r.text}"
+    try:
+        await request("POST", "/documents/cancel_pipeline", timeout=15)
+        return "✅ Pipeline cancelled"
+    except LightRAGError as e:
+        return _err(e)
 
 
 @mcp.tool()
@@ -326,11 +346,11 @@ async def track_operation_status(track_id: str) -> str:
     Args:
         track_id: Operation tracking ID returned by insert/upload operations
     """
-    async with get_client(timeout=15) as c:
-        r = await c.get(f"/documents/track_status/{track_id}")
-        if r.status_code == 401:
-            return "Error 401: invalid API key"
-        return r.text
+    try:
+        data = await request("GET", f"/documents/track_status/{track_id}", timeout=15)
+        return json.dumps(data, ensure_ascii=False) if isinstance(data, dict) else str(data)
+    except LightRAGError as e:
+        return _err(e)
 
 
 @mcp.tool()
@@ -338,14 +358,14 @@ async def clear_memory_cache() -> str:
     """
     Clear the LightRAG LLM response cache.
     Use this if you notice stale or outdated query responses.
+    Note: clears ALL cache (server does not support partial cache clearing).
     """
-    async with get_client(timeout=15) as c:
-        r = await c.post("/documents/clear_cache")
-        if r.status_code == 401:
-            return "Error 401: invalid API key"
-        if r.status_code in (200, 204):
-            return "✅ Cache cleared"
-        return f"Status {r.status_code}: {r.text}"
+    try:
+        # ClearCacheRequest is an empty model — server clears all cache regardless
+        await request("POST", "/documents/clear_cache", json={}, timeout=15)
+        return "✅ Cache cleared"
+    except LightRAGError as e:
+        return _err(e)
 
 
 # ─── KNOWLEDGE GRAPH: VIEW ────────────────────────────────────────────────────
@@ -358,11 +378,11 @@ async def get_graph_labels(limit: int = 50) -> str:
     Args:
         limit: Max number of labels to return (default: 50)
     """
-    async with get_client(timeout=30) as c:
-        r = await c.get(f"/graph/label/popular?limit={limit}")
-        if r.status_code == 401:
-            return "Error 401: invalid API key"
-        return r.text
+    try:
+        data = await request("GET", f"/graph/label/popular?limit={limit}", timeout=30)
+        return json.dumps(data, ensure_ascii=False) if isinstance(data, dict) else str(data)
+    except LightRAGError as e:
+        return _err(e)
 
 
 @mcp.tool()
@@ -373,11 +393,12 @@ async def search_graph_labels(query: str) -> str:
     Args:
         query: Search term to match against label names
     """
-    async with get_client(timeout=30) as c:
-        r = await c.get(f"/graph/label/search?query={query}")
-        if r.status_code == 401:
-            return "Error 401: invalid API key"
-        return r.text
+    try:
+        # Verified: API uses ?q= (not ?query=)
+        data = await request("GET", "/graph/label/search", params={"q": query}, timeout=30)
+        return json.dumps(data, ensure_ascii=False) if isinstance(data, dict) else str(data)
+    except LightRAGError as e:
+        return _err(e)
 
 
 @mcp.tool()
@@ -385,17 +406,16 @@ async def get_graph_stats() -> str:
     """
     Get knowledge graph statistics: total node count and edge count.
     """
-    async with get_client(timeout=30) as c:
-        r = await c.get("/graphs?label=*&max_depth=1&max_nodes=5")
-        if r.status_code == 401:
-            return "Error 401: invalid API key"
-        try:
-            data = r.json()
-            nodes = len(data.get("nodes", []))
-            edges = len(data.get("edges", []))
-            return json.dumps({"node_count": nodes, "edge_count": edges}, ensure_ascii=False)
-        except Exception:
-            return r.text
+    try:
+        data = await request("GET", "/graphs", params={"label": "*", "max_depth": 1, "max_nodes": 5}, timeout=30)
+        if isinstance(data, dict):
+            return json.dumps({
+                "node_count": len(data.get("nodes", [])),
+                "edge_count": len(data.get("edges", [])),
+            }, ensure_ascii=False)
+        return str(data)
+    except LightRAGError as e:
+        return _err(e)
 
 
 @mcp.tool()
@@ -406,11 +426,12 @@ async def check_entity_exists(entity_name: str) -> str:
     Args:
         entity_name: The entity name to look up
     """
-    async with get_client(timeout=15) as c:
-        r = await c.get(f"/graph/entity/exists?entity_name={entity_name}")
-        if r.status_code == 401:
-            return "Error 401: invalid API key"
-        return r.text
+    try:
+        # Verified: LightRAG uses ?name= query parameter (not ?entity_name=)
+        data = await request("GET", "/graph/entity/exists", params={"name": entity_name}, timeout=15)
+        return json.dumps(data, ensure_ascii=False) if isinstance(data, dict) else str(data)
+    except LightRAGError as e:
+        return _err(e)
 
 
 # ─── KNOWLEDGE GRAPH: EDIT ────────────────────────────────────────────────────
@@ -429,17 +450,14 @@ async def create_graph_entity(
         entity_type: Category (e.g. "TECHNOLOGY", "PERSON", "PROJECT", "ORGANIZATION")
         description: Short description of the entity
     """
-    async with get_client(timeout=30) as c:
-        r = await c.post("/graph/entity/create", json={
+    try:
+        data = await request("POST", "/graph/entity/create", json={
             "entity_name": entity_name,
-            "entity_data": {
-                "entity_type": entity_type,
-                "description": description,
-            },
-        })
-        if r.status_code == 401:
-            return "Error 401: invalid API key"
-        return r.text
+            "entity_data": {"entity_type": entity_type, "description": description},
+        }, timeout=30)
+        return json.dumps(data, ensure_ascii=False) if isinstance(data, dict) else str(data)
+    except LightRAGError as e:
+        return _err(e)
 
 
 @mcp.tool()
@@ -458,16 +476,16 @@ async def edit_graph_entity(
         allow_rename: Allow changing entity name (may affect relations)
         allow_merge: Allow merging with existing entity if rename conflicts
     """
-    async with get_client(timeout=30) as c:
-        r = await c.post("/graph/entity/edit", json={
+    try:
+        data = await request("POST", "/graph/entity/edit", json={
             "entity_name": entity_name,
             "updated_data": updated_data,
             "allow_rename": allow_rename,
             "allow_merge": allow_merge,
-        })
-        if r.status_code == 401:
-            return "Error 401: invalid API key"
-        return r.text
+        }, timeout=30)
+        return json.dumps(data, ensure_ascii=False) if isinstance(data, dict) else str(data)
+    except LightRAGError as e:
+        return _err(e)
 
 
 @mcp.tool()
@@ -485,14 +503,14 @@ async def merge_graph_entities(
         entity_to_change_into: Entity name to merge INTO (will be preserved)
                                e.g. "Sergei Stekh"
     """
-    async with get_client(timeout=60) as c:
-        r = await c.post("/graph/entities/merge", json={
+    try:
+        data = await request("POST", "/graph/entities/merge", json={
             "entities_to_change": entities_to_change,
             "entity_to_change_into": entity_to_change_into,
-        })
-        if r.status_code == 401:
-            return "Error 401: invalid API key"
-        return r.text
+        }, timeout=60)
+        return json.dumps(data, ensure_ascii=False) if isinstance(data, dict) else str(data)
+    except LightRAGError as e:
+        return _err(e)
 
 
 @mcp.tool()
@@ -513,19 +531,40 @@ async def create_graph_relation(
         keywords: Comma-separated keywords describing the relation
         weight: Relationship strength (default 1.0)
     """
-    async with get_client(timeout=30) as c:
-        r = await c.post("/graph/relation/create", json={
+    try:
+        data = await request("POST", "/graph/relation/create", json={
             "source_entity": source_entity,
             "target_entity": target_entity,
-            "relation_data": {
-                "description": description,
-                "keywords": keywords,
-                "weight": weight,
-            },
-        })
-        if r.status_code == 401:
-            return "Error 401: invalid API key"
-        return r.text
+            "relation_data": {"description": description, "keywords": keywords, "weight": weight},
+        }, timeout=30)
+        return json.dumps(data, ensure_ascii=False) if isinstance(data, dict) else str(data)
+    except LightRAGError as e:
+        return _err(e)
+
+
+@mcp.tool()
+async def edit_graph_relation(
+    source_id: str,
+    target_id: str,
+    updated_data: dict,
+) -> str:
+    """
+    Edit an existing relationship between two entities.
+
+    Args:
+        source_id: Name/ID of the source entity
+        target_id: Name/ID of the target entity
+        updated_data: Dict with fields to update, e.g. {"description": "...", "weight": 0.8}
+    """
+    try:
+        data = await request("POST", "/graph/relation/edit", json={
+            "source_id": source_id,
+            "target_id": target_id,
+            "updated_data": updated_data,
+        }, timeout=30)
+        return json.dumps(data, ensure_ascii=False) if isinstance(data, dict) else str(data)
+    except LightRAGError as e:
+        return _err(e)
 
 
 @mcp.tool()
@@ -536,17 +575,15 @@ async def delete_graph_entity(entity_name: str) -> str:
     Args:
         entity_name: Name of the entity to delete
     """
-    async with get_client(timeout=30) as c:
-        r = await c.request(
-            "DELETE",
-            "/documents/delete_entity",
+    try:
+        await request(
+            "DELETE", "/documents/delete_entity",
             json={"entity_name": entity_name},
+            timeout=30,
         )
-        if r.status_code in (200, 204):
-            return f"✅ Entity '{entity_name}' deleted"
-        if r.status_code == 401:
-            return "Error 401: invalid API key"
-        return f"Error {r.status_code}: {r.text}"
+        return f"✅ Entity '{entity_name}' deleted"
+    except LightRAGError as e:
+        return _err(e)
 
 
 @mcp.tool()
@@ -558,17 +595,15 @@ async def delete_graph_relation(source_entity: str, target_entity: str) -> str:
         source_entity: Name of the source entity
         target_entity: Name of the target entity
     """
-    async with get_client(timeout=30) as c:
-        r = await c.request(
-            "DELETE",
-            "/documents/delete_relation",
+    try:
+        await request(
+            "DELETE", "/documents/delete_relation",
             json={"source_entity": source_entity, "target_entity": target_entity},
+            timeout=30,
         )
-        if r.status_code in (200, 204):
-            return f"✅ Relation deleted: {source_entity} → {target_entity}"
-        if r.status_code == 401:
-            return "Error 401: invalid API key"
-        return f"Error {r.status_code}: {r.text}"
+        return f"✅ Relation deleted: {source_entity} → {target_entity}"
+    except LightRAGError as e:
+        return _err(e)
 
 
 # ─── SYSTEM ───────────────────────────────────────────────────────────────────
@@ -579,10 +614,9 @@ async def check_memory_health() -> str:
     Check if the LightRAG memory server is running and healthy.
     Returns server version, active models, and pipeline status.
     """
-    async with get_client(timeout=10) as c:
-        r = await c.get("/health")
-        try:
-            data = r.json()
+    try:
+        data = await request("GET", "/health", timeout=10)
+        if isinstance(data, dict):
             return json.dumps({
                 "status": data.get("status"),
                 "version": data.get("core_version"),
@@ -590,5 +624,6 @@ async def check_memory_health() -> str:
                 "embedding_model": data.get("configuration", {}).get("embedding_model"),
                 "pipeline_busy": data.get("pipeline_busy"),
             }, ensure_ascii=False)
-        except Exception:
-            return r.text
+        return str(data)
+    except LightRAGError as e:
+        return _err(e)
