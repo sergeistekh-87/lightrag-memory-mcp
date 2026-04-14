@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 
 LIGHTRAG_URL = os.getenv("LIGHTRAG_BASE_URL", "http://localhost:9621").rstrip("/")
 API_KEY = os.getenv("LIGHTRAG_API_KEY", "")
+DEFAULT_TIMEOUT = float(os.getenv("LIGHTRAG_TIMEOUT", "60.0"))
 
 BASE_HEADERS: dict[str, str] = {}
 if API_KEY:
@@ -85,12 +86,12 @@ def _map_error(status_code: int, body: str) -> LightRAGError:
 
 # ─── Client ──────────────────────────────────────────────────────────────────
 
-def get_client(timeout: float = 60.0) -> httpx.AsyncClient:
+def get_client(timeout: float | None = None) -> httpx.AsyncClient:
     """Return a configured async HTTP client with auth headers."""
     return httpx.AsyncClient(
         base_url=LIGHTRAG_URL,
         headers=BASE_HEADERS,
-        timeout=timeout,
+        timeout=timeout if timeout is not None else DEFAULT_TIMEOUT,
     )
 
 
