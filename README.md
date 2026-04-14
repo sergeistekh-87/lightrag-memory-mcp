@@ -2,16 +2,20 @@
 
 MCP server for [LightRAG](https://github.com/HKUDS/LightRAG) — connects AI agents (Claude, Cursor, Windsurf, n8n) to a shared long-term memory graph.
 
-Built from a complete analysis of the LightRAG REST API (`/openapi.json`).
+Built from a complete analysis of the LightRAG REST API (`/openapi.json`) and verified against the source code.
 
-## Tools (24)
+## Tools (27)
 
-### Query (3)
+### Query (5)
+
+### Query (5)
 | Tool | Description |
 |------|-------------|
-| `query_memory(query, mode, top_k)` | Search + generate answer |
+| `query_memory(query, mode, top_k, response_type)` | Search + generate answer |
 | `query_memory_with_citations(query, mode)` | Answer + source references |
 | `query_context_only(query, mode)` | Raw context chunks, no LLM generation |
+| `query_raw_data(query, mode, top_k)` | Structured JSON data — entities, relations, chunks (no LLM) |
+| `query_with_conversation(query, history, mode)` | Multi-turn dialogue with conversation history |
 
 ### Documents — Insert (4)
 | Tool | Description |
@@ -45,13 +49,15 @@ Built from a complete analysis of the LightRAG REST API (`/openapi.json`).
 | `get_graph_stats()` | Node and edge counts |
 | `check_entity_exists(entity_name)` | Check if entity is in graph |
 
-### Knowledge Graph — Edit (4)
+### Knowledge Graph — Edit (5)
 | Tool | Description |
 |------|-------------|
-| `create_graph_entity(name, type, description)` | Manually add entity |
-| `edit_graph_entity(name, description, type)` | Modify existing entity |
-| `merge_graph_entities(sources, target)` | Merge duplicate entities |
-| `delete_graph_entity(entity_name)` | Remove entity + relations |
+| `create_graph_entity(entity_name, entity_type, description)` | Manually add entity |
+| `edit_graph_entity(entity_name, updated_data, allow_rename, allow_merge)` | Modify existing entity |
+| `merge_graph_entities(entities_to_change, entity_to_change_into)` | Merge duplicate entities |
+| `create_graph_relation(source, target, description, keywords, weight)` | Add relation between entities |
+| `delete_graph_entity(entity_name)` | Remove entity + all its relations |
+| `delete_graph_relation(source_entity, target_entity)` | Remove specific relation |
 
 ### System (1)
 | Tool | Description |
