@@ -248,7 +248,7 @@ async def list_memory_documents(
         "sort_direction": sort_direction,
     }
     if status_filter:
-        payload["status_filter"] = status_filter.upper()
+        payload["status_filter"] = status_filter.lower()
     try:
         data = await request("POST", "/documents/paginated", json=payload, timeout=30)
         return json.dumps(data, ensure_ascii=False) if isinstance(data, dict) else str(data)
